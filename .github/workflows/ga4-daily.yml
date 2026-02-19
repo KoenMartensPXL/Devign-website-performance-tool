@@ -25,7 +25,7 @@ jobs:
           node-version: "20"
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Run daily GA4 fetch
         run: node fetch-ga4-daily.js
