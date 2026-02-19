@@ -1,0 +1,35 @@
+name: GA4 Daily Fetch
+
+on:
+  schedule:
+    # GitHub cron is UTC.
+    # 23:30 UTC = 00:30 in België tijdens wintertijd.
+    - cron: "30 23 * * *"
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: "Optional: YYYY-MM-DD (leave empty to fetch yesterday)"
+        required: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run daily GA4 fetch
+        run: node fetch-ga4-daily.js
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GA_SERVICE_ACCOUNT_JSON: ${{ secrets.GA_SERVICE_ACCOUNT_JSON }}
+          TARGET_DATE: ${{ github.event.inputs.target_date }}
