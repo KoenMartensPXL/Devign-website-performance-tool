@@ -1,0 +1,14 @@
+{
+  "name": "devign-website-performance-tool",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "fetch:daily": "node scripts/fetch-ga4-daily.js"
+  },
+  "dependencies": {
+    "@google-analytics/data": "^4.8.0",
+    "dotenv": "^16.4.5",
+    "pg": "^8.11.5"
+  }
+}
