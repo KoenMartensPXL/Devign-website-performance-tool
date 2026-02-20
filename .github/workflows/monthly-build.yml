@@ -24,3 +24,5 @@ jobs:
           TARGET_MONTH: ${{ github.event.inputs.target_month }}
           MAGIC_LINK_BASE_URL: ${{ secrets.MAGIC_LINK_BASE_URL }}
           MAGIC_LINK_TTL_DAYS: ${{ secrets.MAGIC_LINK_TTL_DAYS }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          TEST_EMAIL_TO: ${{ secrets.TEST_EMAIL_TO }}
