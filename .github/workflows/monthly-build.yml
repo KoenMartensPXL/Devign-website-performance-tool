@@ -22,3 +22,5 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           TARGET_MONTH: ${{ github.event.inputs.target_month }}
+          MAGIC_LINK_BASE_URL: ${{ secrets.MAGIC_LINK_BASE_URL }}
+          MAGIC_LINK_TTL_DAYS: ${{ secrets.MAGIC_LINK_TTL_DAYS }}
