@@ -1,6 +1,7 @@
 require("dotenv").config();
 const { Client } = require("pg");
 const crypto = require("crypto");
+const { sendMonthlyTestEmail } = require("./send-email");
 
 function mustEnv(name) {
   const v = process.env[name];
@@ -52,7 +53,9 @@ function hashToken(token) {
 
 async function main() {
   const targetMonthStr = process.env.TARGET_MONTH;
-  const targetMonth = targetMonthStr ? new Date(`${targetMonthStr}T00:00:00Z`) : defaultTargetMonth();
+  const targetMonth = targetMonthStr
+    ? new Date(`${targetMonthStr}T00:00:00Z`)
+    : defaultTargetMonth();
 
   const monthStart = firstDayOfMonth(targetMonth);
   const monthEnd = addMonths(monthStart, 1);
@@ -60,7 +63,9 @@ async function main() {
   const prevMonthEnd = monthStart;
 
   console.log(
-    `Monthly build: month=${iso(monthStart)} -> ${iso(monthEnd)} (prev ${iso(prevMonthStart)} -> ${iso(prevMonthEnd)})`
+    `Monthly build: month=${iso(monthStart)} -> ${iso(monthEnd)} (prev ${iso(
+      prevMonthStart
+    )} -> ${iso(prevMonthEnd)})`
   );
 
   const db = new Client({ connectionString: mustEnv("DATABASE_URL") });
@@ -85,7 +90,15 @@ async function main() {
   let fail = 0;
   let errorSummary = "";
 
-  async function aggregateJsonTopList(customerId, columnName, limit, startDate, endDate, keyField = "key", valueField = "value") {
+  async function aggregateJsonTopList(
+    customerId,
+    columnName,
+    limit,
+    startDate,
+    endDate,
+    keyField = "key",
+    valueField = "value"
+  ) {
     const q = `
       select
         x.key as key,
@@ -104,7 +117,13 @@ async function main() {
       order by value desc
       limit ${limit};
     `;
-    const res = await db.query(q, [customerId, iso(startDate), keyField, valueField, iso(endDate)]);
+    const res = await db.query(q, [
+      customerId,
+      iso(startDate),
+      keyField,
+      valueField,
+      iso(endDate),
+    ]);
     return res.rows.map((r) => ({ key: r.key, value: Number(r.value) }));
   }
 
@@ -137,14 +156,17 @@ async function main() {
     }));
   }
 
-  // Magic link base URL is optional for storage (we store token hash only),
-  // but it's useful for later emailing.
-  const baseUrl = process.env.MAGIC_LINK_BASE_URL || "";
+  // Required for emailing
+  const baseUrl = mustEnv("MAGIC_LINK_BASE_URL"); // e.g. https://xxx.vercel.app/r
+  const testEmailTo = mustEnv("TEST_EMAIL_TO");
   const ttl = ttlDays();
 
   for (const c of customers) {
+    const label = `${c.name} (${c.id})`;
     try {
+      // --------------------------
       // GA4 month
+      // --------------------------
       const ga4Agg = await db.query(
         `
         select
@@ -167,13 +189,45 @@ async function main() {
       );
       const g = ga4Agg.rows[0];
 
-      const top_pages = await aggregateJsonTopList(c.id, "top_pages", 5, monthStart, monthEnd);
-      const top_countries = await aggregateJsonTopList(c.id, "top_countries", 5, monthStart, monthEnd);
-      const top_sources = await aggregateJsonTopList(c.id, "top_sources", 5, monthStart, monthEnd);
-      const top_events = await aggregateJsonTopList(c.id, "top_events", 5, monthStart, monthEnd);
-      const device_split = await aggregateJsonTopList(c.id, "device_split", 3, monthStart, monthEnd);
+      const top_pages = await aggregateJsonTopList(
+        c.id,
+        "top_pages",
+        5,
+        monthStart,
+        monthEnd
+      );
+      const top_countries = await aggregateJsonTopList(
+        c.id,
+        "top_countries",
+        5,
+        monthStart,
+        monthEnd
+      );
+      const top_sources = await aggregateJsonTopList(
+        c.id,
+        "top_sources",
+        5,
+        monthStart,
+        monthEnd
+      );
+      const top_events = await aggregateJsonTopList(
+        c.id,
+        "top_events",
+        5,
+        monthStart,
+        monthEnd
+      );
+      const device_split = await aggregateJsonTopList(
+        c.id,
+        "device_split",
+        3,
+        monthStart,
+        monthEnd
+      );
 
+      // --------------------------
       // GSC month
+      // --------------------------
       const gscAgg = await db.query(
         `
         select
@@ -189,8 +243,17 @@ async function main() {
         [c.id, iso(monthStart), iso(monthEnd)]
       );
       const s = gscAgg.rows[0];
-      const top_queries = await aggregateGscTopQueries(c.id, 5, monthStart, monthEnd);
 
+      const top_queries = await aggregateGscTopQueries(
+        c.id,
+        5,
+        monthStart,
+        monthEnd
+      );
+
+      // --------------------------
+      // Summary JSON
+      // --------------------------
       const summary = {
         month: iso(monthStart),
         range: { start: iso(monthStart), end_exclusive: iso(monthEnd) },
@@ -199,11 +262,18 @@ async function main() {
           active_users: Number(g.active_users_sum),
           sessions: Number(g.sessions_sum),
           pageviews: Number(g.pageviews_sum),
-          engagement_rate_avg: g.engagement_rate_avg !== null ? Number(g.engagement_rate_avg) : null,
-          bounce_rate_avg: g.bounce_rate_avg !== null ? Number(g.bounce_rate_avg) : null,
+          engagement_rate_avg:
+            g.engagement_rate_avg !== null ? Number(g.engagement_rate_avg) : null,
+          bounce_rate_avg:
+            g.bounce_rate_avg !== null ? Number(g.bounce_rate_avg) : null,
           avg_engagement_time_seconds_avg:
-            g.avg_engagement_time_seconds_avg !== null ? Number(g.avg_engagement_time_seconds_avg) : null,
-          pages_per_session_avg: g.pages_per_session_avg !== null ? Number(g.pages_per_session_avg) : null,
+            g.avg_engagement_time_seconds_avg !== null
+              ? Number(g.avg_engagement_time_seconds_avg)
+              : null,
+          pages_per_session_avg:
+            g.pages_per_session_avg !== null
+              ? Number(g.pages_per_session_avg)
+              : null,
           conversions: Number(g.conversions_sum),
           total_revenue: g.total_revenue_sum !== null ? Number(g.total_revenue_sum) : 0,
         },
@@ -221,7 +291,9 @@ async function main() {
         top_queries,
       };
 
-      // prev month quick compare
+      // --------------------------
+      // Previous month compare
+      // --------------------------
       const ga4PrevAgg = await db.query(
         `
         select
@@ -288,7 +360,9 @@ async function main() {
         },
       };
 
-      // upsert monthly_reports
+      // --------------------------
+      // Upsert monthly_reports
+      // --------------------------
       await db.query(
         `
         insert into public.monthly_reports (customer_id, month, summary, comparison, generated_at)
@@ -301,16 +375,15 @@ async function main() {
         [c.id, iso(monthStart), JSON.stringify(summary), JSON.stringify(comparison)]
       );
 
+      console.log(`📦 Report saved: ${label} month=${iso(monthStart)}`);
+
       // --------------------------
-      // NEW: Create / upsert magic link token for this month
+      // Create / upsert magic token for (customer_id, created_for_month)
       // --------------------------
       const token = makeToken();
       const tokenHash = hashToken(token);
-
-      // expires: monthStart + TTL days (so it stays valid through next month mail window)
       const expiresAt = new Date(Date.now() + ttl * 24 * 60 * 60 * 1000);
 
-      // Upsert per (customer_id, created_for_month)
       await db.query(
         `
         insert into public.magic_link_tokens (customer_id, token_hash, created_for_month, expires_at, created_at)
@@ -323,24 +396,36 @@ async function main() {
         [c.id, tokenHash, iso(monthStart), expiresAt.toISOString()]
       );
 
-      // Log the URL (handig voor testen; mailen later)
-      if (baseUrl) {
-        console.log(`🔗 Magic link (${c.name} ${iso(monthStart)}): ${baseUrl}${token}?month=${iso(monthStart)}`);
-      } else {
-        console.log(`🔐 Magic token created for ${c.name} month=${iso(monthStart)} (no base url set)`);
-      }
+      const reportUrl = `${baseUrl}/${token}?month=${iso(monthStart)}`;
+
+      console.log(`🔗 Magic link created: ${label} -> ${reportUrl}`);
+
+      // --------------------------
+      // Send email (test: always to TEST_EMAIL_TO)
+      // Later: replace with customer email field.
+      // --------------------------
+      await sendMonthlyTestEmail({
+        to: testEmailTo,
+        customerName: c.name,
+        monthStr: iso(monthStart),
+        reportUrl,
+        summary,
+        comparison,
+      });
+
+      console.log(`✉️  Email sent to ${testEmailTo}: ${label}`);
 
       ok++;
-      console.log(`✅ Monthly report saved: ${c.name} month=${iso(monthStart)}`);
     } catch (e) {
       fail++;
-      const msg = `❌ Monthly report failed ${c.name}: ${e.message}`;
+      const msg = `❌ Monthly build failed ${label}: ${e.message}`;
       console.error(msg);
       errorSummary += msg + "\n";
     }
   }
 
   const status = fail === 0 ? "success" : ok > 0 ? "partial" : "failed";
+
   await db.query(
     `update public.job_runs
      set finished_at = now(),
