@@ -395,7 +395,7 @@ export default function DashboardPage() {
             {/* Pixelplus Wordmark */}
             <div className="flex items-center">
               <Image
-                src="/brand/pixelplusIconLogo.png"
+                src="/brand/PixelplusIconLogo.png"
                 alt="Pixelplus"
                 width={180}
                 height={32}
@@ -592,7 +592,7 @@ export default function DashboardPage() {
               {/* Right: Big logo */}
               <div className="flex justify-start md:justify-end">
                 <Image
-                  src="/brand/pixelplus+Logo.png"
+                  src="/brand/Pixelplus+Logo.png"
                   alt="Pixelplus"
                   width={260}
                   height={60}
