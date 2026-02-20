@@ -1,0 +1,24 @@
+name: Monthly Build (DB aggregation)
+
+on:
+  schedule:
+    - cron: "00 5 1 * *"   # 06:00 België (UTC) — let op zomer/wintertijd
+  workflow_dispatch:
+    inputs:
+      target_month:
+        description: "YYYY-MM-01 (leave empty = previous month)"
+        required: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install
+      - run: node scripts/build-monthly-reports.js
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TARGET_MONTH: ${{ github.event.inputs.target_month }}
