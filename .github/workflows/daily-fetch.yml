@@ -1,0 +1,26 @@
+name: Daily Fetch (GA4 + GSC)
+
+on:
+  schedule:
+    - cron: "30 23 * * *"   # 00:30 België tijdens wintertijd (UTC)
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: "Optional: YYYY-MM-DD (leave empty = yesterday)"
+        required: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install
+      - run: node scripts/fetch-daily.js
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GA_SERVICE_ACCOUNT_JSON_B64: ${{ secrets.GA_SERVICE_ACCOUNT_JSON_B64 }}
+          GA_SERVICE_ACCOUNT_JSON: ${{ secrets.GA_SERVICE_ACCOUNT_JSON }}
+          TARGET_DATE: ${{ github.event.inputs.target_date }}
