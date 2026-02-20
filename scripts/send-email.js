@@ -16,31 +16,38 @@ function escapeHtml(s) {
 }
 
 function formatMonthNL(yyyyMm01) {
-  // input: "2026-02-01"
   const d = new Date(`${yyyyMm01}T00:00:00Z`);
   const months = [
-    "januari","februari","maart","april","mei","juni",
-    "juli","augustus","september","oktober","november","december"
+    "januari",
+    "februari",
+    "maart",
+    "april",
+    "mei",
+    "juni",
+    "juli",
+    "augustus",
+    "september",
+    "oktober",
+    "november",
+    "december",
   ];
   return `${months[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
 }
 
-// Email-safe HTML: veel clients strippen <style>.
-// Daarom zoveel mogelijk inline styles gebruiken.
 function buildMonthlyEmailHtml({
   customerName,
-  monthStr, // "2026-02-01"
+  monthStr, // "YYYY-MM-01"
   reportUrl,
   summary,
   comparison,
 }) {
   const monthLabel = formatMonthNL(monthStr);
 
-  // KPI helpers (toon altijd 0)
   const k = summary?.kpis ?? {};
   const topPages = summary?.top_pages ?? [];
   const topCountries = summary?.top_countries ?? [];
 
+  // altijd numeriek tonen (0 is ok)
   const newUsers = Number(k.new_users ?? 0);
   const sessions = Number(k.sessions ?? 0);
 
@@ -50,15 +57,19 @@ function buildMonthlyEmailHtml({
   const topCountry = topCountries[0]?.key ?? "—";
   const topCountryUsers = Number(topCountries[0]?.value ?? 0);
 
-  // Groei (als beschikbaar)
   const comp = comparison?.kpis ?? {};
   const growthUsers = comp?.new_users?.delta_pct;
   const growthSessions = comp?.sessions?.delta_pct;
 
   const growthUsersLabel =
-    typeof growthUsers === "number" ? `${growthUsers >= 0 ? "+" : ""}${growthUsers.toFixed(1)}%` : "—";
+    typeof growthUsers === "number"
+      ? `${growthUsers >= 0 ? "+" : ""}${growthUsers.toFixed(1)}%`
+      : "—";
+
   const growthSessionsLabel =
-    typeof growthSessions === "number" ? `${growthSessions >= 0 ? "+" : ""}${growthSessions.toFixed(1)}%` : "—";
+    typeof growthSessions === "number"
+      ? `${growthSessions >= 0 ? "+" : ""}${growthSessions.toFixed(1)}%`
+      : "—";
 
   const year = new Date().getUTCFullYear();
 
@@ -73,46 +84,53 @@ function buildMonthlyEmailHtml({
   <div style="padding:24px;">
     <div style="max-width:600px;margin:0 auto;background:#0f0e0e;border-radius:12px;padding:28px;border:1px solid rgba(255,255,255,.08);">
 
-      <!-- Header -->
       <div style="margin-bottom:22px;">
         <div style="font-size:22px;font-weight:700;letter-spacing:.5px;">pixelplus<span style="opacity:.65;">+</span></div>
         <h1 style="font-size:18px;margin:16px 0 10px;line-height:1.3;">Uw maandelijkse website rapport</h1>
         <p style="margin:0 0 10px;color:#cfcfcf;font-size:14px;line-height:1.6;">
           <b style="color:#fff;">Beste ${escapeHtml(customerName)},</b><br/>
-          Hierbij ontvangt u het prestatierapport van uw website voor <strong>${escapeHtml(monthLabel)}</strong>.
+          Hierbij ontvangt u het prestatierapport van uw website voor <strong>${escapeHtml(
+            monthLabel
+          )}</strong>.
           Hieronder ziet u een korte samenvatting van de belangrijkste cijfers.
         </p>
       </div>
 
-      <!-- Stats: 2x2 grid (email-safe met table) -->
       <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="border-collapse:separate;border-spacing:10px;margin:10px -10px 0;">
         <tr>
           <td width="50%" style="background:#1a1818;border-radius:10px;padding:18px;vertical-align:top;">
             <div style="font-size:13px;color:#fff;margin-bottom:10px;">👤 Nieuwe gebruikers</div>
             <div style="font-size:22px;font-weight:700;">${newUsers}</div>
-            <div style="font-size:12px;color:#7CFFB2;margin-top:6px;">${escapeHtml(growthUsersLabel)} vs vorige maand</div>
+            <div style="font-size:12px;color:#7CFFB2;margin-top:6px;">${escapeHtml(
+              growthUsersLabel
+            )} vs vorige maand</div>
           </td>
           <td width="50%" style="background:#1a1818;border-radius:10px;padding:18px;vertical-align:top;">
             <div style="font-size:13px;color:#fff;margin-bottom:10px;">📄 Sessies</div>
             <div style="font-size:22px;font-weight:700;">${sessions}</div>
-            <div style="font-size:12px;color:#7CFFB2;margin-top:6px;">${escapeHtml(growthSessionsLabel)} vs vorige maand</div>
+            <div style="font-size:12px;color:#7CFFB2;margin-top:6px;">${escapeHtml(
+              growthSessionsLabel
+            )} vs vorige maand</div>
           </td>
         </tr>
         <tr>
           <td width="50%" style="background:#1a1818;border-radius:10px;padding:18px;vertical-align:top;">
             <div style="font-size:13px;color:#fff;margin-bottom:10px;">📑 Populairste pagina</div>
-            <div style="font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(topPage)}</div>
+            <div style="font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(
+              topPage
+            )}</div>
             <div style="font-size:12px;color:#cfcfcf;margin-top:6px;">${topPageViews} weergaven</div>
           </td>
           <td width="50%" style="background:#1a1818;border-radius:10px;padding:18px;vertical-align:top;">
             <div style="font-size:13px;color:#fff;margin-bottom:10px;">🌍 Top land</div>
-            <div style="font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(topCountry)}</div>
+            <div style="font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(
+              topCountry
+            )}</div>
             <div style="font-size:12px;color:#cfcfcf;margin-top:6px;">${topCountryUsers} gebruikers</div>
           </td>
         </tr>
       </table>
 
-      <!-- CTA -->
       <div style="background:#1a1818;border-radius:10px;padding:22px;margin-top:16px;text-align:center;">
         <p style="margin:0 0 12px;color:#cfcfcf;font-size:13px;line-height:1.6;">
           Bekijk uw volledig dashboard met gedetailleerde statistieken, grafieken en groeikansen via onderstaande knop.
@@ -134,7 +152,6 @@ function buildMonthlyEmailHtml({
         Met vriendelijke groet,<br><strong style="color:#fff;">Team Pixelplus</strong>
       </p>
 
-      <!-- Footer -->
       <div style="margin-top:22px;padding-top:16px;border-top:1px solid rgba(255,255,255,.12);text-align:center;">
         <div style="font-size:12px;color:#8a8a8a;line-height:1.6;">
           <strong style="color:#fff;">Pixelplus Web Development</strong><br/>
@@ -163,7 +180,13 @@ async function sendMonthlyTestEmail({
   const resend = new Resend(mustEnv("RESEND_API_KEY"));
 
   const subject = `Pixelplus rapport – ${formatMonthNL(monthStr)} – ${customerName}`;
-  const html = buildMonthlyEmailHtml({ customerName, monthStr, reportUrl, summary, comparison });
+  const html = buildMonthlyEmailHtml({
+    customerName,
+    monthStr,
+    reportUrl,
+    summary,
+    comparison,
+  });
 
   return resend.emails.send({
     from: "Pixelplus <onboarding@resend.dev>",
