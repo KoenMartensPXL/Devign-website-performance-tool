@@ -10,6 +10,7 @@
     "@google-analytics/data": "^4.8.0",
     "dotenv": "^16.4.5",
     "googleapis": "^140.0.0",
-    "pg": "^8.11.5"
+    "pg": "^8.11.5",
+    "resend": "^6.9.2"
   }
 }
