@@ -1,5 +1,6 @@
 require("dotenv").config();
 const { Client } = require("pg");
+const crypto = require("crypto");
 
 function mustEnv(name) {
   const v = process.env[name];
@@ -8,8 +9,7 @@ function mustEnv(name) {
 }
 
 function firstDayOfMonth(date) {
-  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
-  return d;
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
 }
 function addMonths(date, months) {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + months, 1));
@@ -18,7 +18,6 @@ function iso(d) {
   return d.toISOString().slice(0, 10);
 }
 
-// Default = previous month (so on 1st you summarize last month)
 function defaultTargetMonth() {
   const now = new Date();
   const thisMonth = firstDayOfMonth(now);
@@ -34,12 +33,25 @@ function trendFromDelta(deltaPct) {
 
 function deltaPct(current, previous) {
   if (previous === null || previous === undefined) return null;
-  if (previous === 0) return current === 0 ? 0 : null; // avoid Infinity; you can decide another rule
+  if (previous === 0) return current === 0 ? 0 : null;
   return ((current - previous) / previous) * 100;
 }
 
+function ttlDays() {
+  const raw = process.env.MAGIC_LINK_TTL_DAYS;
+  const n = raw ? Number(raw) : 35;
+  return Number.isFinite(n) && n > 0 ? n : 35;
+}
+
+function makeToken() {
+  return crypto.randomBytes(32).toString("hex"); // 64 chars
+}
+function hashToken(token) {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
 async function main() {
-  const targetMonthStr = process.env.TARGET_MONTH; // "YYYY-MM-01" recommended
+  const targetMonthStr = process.env.TARGET_MONTH;
   const targetMonth = targetMonthStr ? new Date(`${targetMonthStr}T00:00:00Z`) : defaultTargetMonth();
 
   const monthStart = firstDayOfMonth(targetMonth);
@@ -47,12 +59,13 @@ async function main() {
   const prevMonthStart = addMonths(monthStart, -1);
   const prevMonthEnd = monthStart;
 
-  console.log(`Monthly build: month=${iso(monthStart)} -> ${iso(monthEnd)} (prev ${iso(prevMonthStart)} -> ${iso(prevMonthEnd)})`);
+  console.log(
+    `Monthly build: month=${iso(monthStart)} -> ${iso(monthEnd)} (prev ${iso(prevMonthStart)} -> ${iso(prevMonthEnd)})`
+  );
 
   const db = new Client({ connectionString: mustEnv("DATABASE_URL") });
   await db.connect();
 
-  // job run log
   const jr = await db.query(
     `insert into public.job_runs (job_name, status, target_date)
      values ('monthly_build', 'running', $1) returning id`,
@@ -72,7 +85,6 @@ async function main() {
   let fail = 0;
   let errorSummary = "";
 
-  // Helper: aggregate top lists from ga4_daily_breakdowns JSON arrays
   async function aggregateJsonTopList(customerId, columnName, limit, startDate, endDate, keyField = "key", valueField = "value") {
     const q = `
       select
@@ -93,7 +105,7 @@ async function main() {
       limit ${limit};
     `;
     const res = await db.query(q, [customerId, iso(startDate), keyField, valueField, iso(endDate)]);
-    return res.rows.map(r => ({ key: r.key, value: Number(r.value) }));
+    return res.rows.map((r) => ({ key: r.key, value: Number(r.value) }));
   }
 
   async function aggregateGscTopQueries(customerId, limit, startDate, endDate) {
@@ -118,18 +130,21 @@ async function main() {
       limit ${limit};
     `;
     const res = await db.query(q, [customerId, iso(startDate), iso(endDate)]);
-    return res.rows.map(r => ({
+    return res.rows.map((r) => ({
       query: r.key,
       clicks: Number(r.clicks),
       impressions: Number(r.impressions),
     }));
   }
 
+  // Magic link base URL is optional for storage (we store token hash only),
+  // but it's useful for later emailing.
+  const baseUrl = process.env.MAGIC_LINK_BASE_URL || "";
+  const ttl = ttlDays();
+
   for (const c of customers) {
     try {
-      // --------------------------
-      // GA4 monthly totals/avgs
-      // --------------------------
+      // GA4 month
       const ga4Agg = await db.query(
         `
         select
@@ -150,21 +165,15 @@ async function main() {
         `,
         [c.id, iso(monthStart), iso(monthEnd)]
       );
-
       const g = ga4Agg.rows[0];
 
-      // --------------------------
-      // GA4 top lists (month)
-      // --------------------------
       const top_pages = await aggregateJsonTopList(c.id, "top_pages", 5, monthStart, monthEnd);
       const top_countries = await aggregateJsonTopList(c.id, "top_countries", 5, monthStart, monthEnd);
       const top_sources = await aggregateJsonTopList(c.id, "top_sources", 5, monthStart, monthEnd);
       const top_events = await aggregateJsonTopList(c.id, "top_events", 5, monthStart, monthEnd);
       const device_split = await aggregateJsonTopList(c.id, "device_split", 3, monthStart, monthEnd);
 
-      // --------------------------
-      // GSC monthly totals/avgs
-      // --------------------------
+      // GSC month
       const gscAgg = await db.query(
         `
         select
@@ -179,13 +188,9 @@ async function main() {
         `,
         [c.id, iso(monthStart), iso(monthEnd)]
       );
-
       const s = gscAgg.rows[0];
       const top_queries = await aggregateGscTopQueries(c.id, 5, monthStart, monthEnd);
 
-      // --------------------------
-      // Build summary JSON
-      // --------------------------
       const summary = {
         month: iso(monthStart),
         range: { start: iso(monthStart), end_exclusive: iso(monthEnd) },
@@ -216,10 +221,7 @@ async function main() {
         top_queries,
       };
 
-      // --------------------------
-      // Build comparison JSON (vs previous month)
-      // We'll compute prev month summary quickly from daily tables (same logic but no top lists needed for now)
-      // --------------------------
+      // prev month quick compare
       const ga4PrevAgg = await db.query(
         `
         select
@@ -259,13 +261,7 @@ async function main() {
 
       function compEntry(key, curr, prev) {
         const d = deltaPct(curr, prev);
-        return {
-          key,
-          current: curr,
-          previous: prev,
-          delta_pct: d,
-          trend: trendFromDelta(d),
-        };
+        return { key, current: curr, previous: prev, delta_pct: d, trend: trendFromDelta(d) };
       }
 
       const comparison = {
@@ -292,9 +288,7 @@ async function main() {
         },
       };
 
-      // --------------------------
-      // Upsert monthly_reports
-      // --------------------------
+      // upsert monthly_reports
       await db.query(
         `
         insert into public.monthly_reports (customer_id, month, summary, comparison, generated_at)
@@ -306,6 +300,35 @@ async function main() {
         `,
         [c.id, iso(monthStart), JSON.stringify(summary), JSON.stringify(comparison)]
       );
+
+      // --------------------------
+      // NEW: Create / upsert magic link token for this month
+      // --------------------------
+      const token = makeToken();
+      const tokenHash = hashToken(token);
+
+      // expires: monthStart + TTL days (so it stays valid through next month mail window)
+      const expiresAt = new Date(Date.now() + ttl * 24 * 60 * 60 * 1000);
+
+      // Upsert per (customer_id, created_for_month)
+      await db.query(
+        `
+        insert into public.magic_link_tokens (customer_id, token_hash, created_for_month, expires_at, created_at)
+        values ($1, $2, $3::date, $4::timestamptz, now())
+        on conflict (customer_id, created_for_month) do update set
+          token_hash = excluded.token_hash,
+          expires_at = excluded.expires_at,
+          created_at = now()
+        `,
+        [c.id, tokenHash, iso(monthStart), expiresAt.toISOString()]
+      );
+
+      // Log the URL (handig voor testen; mailen later)
+      if (baseUrl) {
+        console.log(`🔗 Magic link (${c.name} ${iso(monthStart)}): ${baseUrl}${token}?month=${iso(monthStart)}`);
+      } else {
+        console.log(`🔐 Magic token created for ${c.name} month=${iso(monthStart)} (no base url set)`);
+      }
 
       ok++;
       console.log(`✅ Monthly report saved: ${c.name} month=${iso(monthStart)}`);
