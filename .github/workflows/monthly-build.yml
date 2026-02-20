@@ -1,8 +1,8 @@
-name: Monthly Build (DB aggregation)
+name: Monthly Build (DB aggregation + magic links + email)
 
 on:
   schedule:
-    - cron: "00 5 1 * *"   # 06:00 België (UTC) — let op zomer/wintertijd
+    - cron: "00 5 1 * *" # 06:00 België (UTC) — let op zomer/wintertijd
   workflow_dispatch:
     inputs:
       target_month:
@@ -14,15 +14,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+
       - run: npm install
+
       - run: node scripts/build-monthly-reports.js
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           TARGET_MONTH: ${{ github.event.inputs.target_month }}
+
+          # magic link settings
           MAGIC_LINK_BASE_URL: ${{ secrets.MAGIC_LINK_BASE_URL }}
           MAGIC_LINK_TTL_DAYS: ${{ secrets.MAGIC_LINK_TTL_DAYS }}
+
+          # email
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           TEST_EMAIL_TO: ${{ secrets.TEST_EMAIL_TO }}
