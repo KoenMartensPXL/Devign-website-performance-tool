@@ -128,7 +128,7 @@ function buildMonthlyEmailHtml({
         </p>
 
         <div style="margin-top:10px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);padding:12px 14px;border-radius:10px;color:#cfcfcf;font-size:13px;line-height:1.6;">
-          ✨ ${hook}
+          ${hook}
         </div>
       </div>
 
