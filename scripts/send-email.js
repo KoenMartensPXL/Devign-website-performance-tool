@@ -34,6 +34,26 @@ function formatMonthNL(yyyyMm01) {
   return `${months[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
 }
 
+function fmtInt(n) {
+  const x = Number(n ?? 0);
+  if (!Number.isFinite(x)) return "0";
+  return Math.round(x).toLocaleString("nl-NL");
+}
+
+function fmtPct(delta) {
+  if (typeof delta !== "number" || !Number.isFinite(delta)) return "—";
+  const sign = delta >= 0 ? "+" : "";
+  return `${sign}${delta.toFixed(1)}%`;
+}
+
+function deltaColor(delta) {
+  // matches your design: green for up, red for down, gray for neutral/unknown
+  if (typeof delta !== "number" || !Number.isFinite(delta)) return "#9a9a9a";
+  if (delta > 1.5) return "#7CFFB2";
+  if (delta < -1.5) return "#FF6B6B";
+  return "#cfcfcf";
+}
+
 function buildMonthlyEmailHtml({
   customerName,
   monthStr, // "YYYY-MM-01"
@@ -44,34 +64,46 @@ function buildMonthlyEmailHtml({
   const monthLabel = formatMonthNL(monthStr);
 
   const k = summary?.kpis ?? {};
-  const topPages = summary?.top_pages ?? [];
-  const topCountries = summary?.top_countries ?? [];
-
-  // altijd numeriek tonen (0 is ok)
-  const newUsers = Number(k.new_users ?? 0);
-  const sessions = Number(k.sessions ?? 0);
-
-  const topPage = topPages[0]?.key ?? "—";
-  const topPageViews = Number(topPages[0]?.value ?? 0);
-
-  const topCountry = topCountries[0]?.key ?? "—";
-  const topCountryUsers = Number(topCountries[0]?.value ?? 0);
-
+  const gsc = summary?.gsc ?? {};
   const comp = comparison?.kpis ?? {};
-  const growthUsers = comp?.new_users?.delta_pct;
-  const growthSessions = comp?.sessions?.delta_pct;
 
-  const growthUsersLabel =
-    typeof growthUsers === "number"
-      ? `${growthUsers >= 0 ? "+" : ""}${growthUsers.toFixed(1)}%`
-      : "—";
+  // KPI 1: Nieuwe gebruikers (GA4)
+  const newUsers = Number(k.new_users ?? 0);
+  const newUsersDelta = comp?.new_users?.delta_pct;
 
-  const growthSessionsLabel =
-    typeof growthSessions === "number"
-      ? `${growthSessions >= 0 ? "+" : ""}${growthSessions.toFixed(1)}%`
-      : "—";
+  // KPI 2: Conversies (GA4)
+  const conversions = Number(k.conversions ?? 0);
+  const conversionsDelta = comp?.conversions?.delta_pct;
+
+  // KPI 3: Organisch verkeer (GSC clicks)
+  const organicClicks = Number(gsc.clicks ?? 0);
+  const organicClicksDelta = comp?.gsc_clicks?.delta_pct;
+
+  // KPI 4: Gemiste kans (GSC impressions - clicks)
+  const impressions = Number(gsc.impressions ?? 0);
+  const missedOpportunity = Math.max(0, impressions - organicClicks);
+
+  const prevClicks = Number(comp?.gsc_clicks?.previous ?? 0);
+  const prevImpressions = Number(comp?.gsc_impressions?.previous ?? 0);
+  const prevMissed = Math.max(0, prevImpressions - prevClicks);
+
+  const missedDelta =
+    prevMissed === 0 ? (missedOpportunity === 0 ? 0 : null) : ((missedOpportunity - prevMissed) / prevMissed) * 100;
 
   const year = new Date().getUTCFullYear();
+
+  const hook =
+    missedOpportunity > 0
+      ? `We zien <b style="color:#fff;">${fmtInt(
+          missedOpportunity
+        )}</b> Google-vertoningen zonder klik — er zit dus nog extra groei in.`
+      : `Netjes: vrijwel alle vertoningen pakken ook écht clicks. Tijd om te kijken waar we nog kunnen optimaliseren.`;
+
+  const cardStyle =
+    "background:#1a1818;border-radius:10px;padding:18px;vertical-align:top;";
+  const labelStyle = "font-size:13px;color:#fff;margin-bottom:10px;";
+  const valueStyle = "font-size:22px;font-weight:700;";
+  const subStyle = "font-size:12px;margin-top:6px;";
 
   return `<!DOCTYPE html>
 <html lang="nl">
@@ -92,48 +124,61 @@ function buildMonthlyEmailHtml({
           Hierbij ontvangt u het prestatierapport van uw website voor <strong>${escapeHtml(
             monthLabel
           )}</strong>.
-          Hieronder ziet u een korte samenvatting van de belangrijkste cijfers.
+          Hieronder ziet u de 4 KPI’s die er deze maand écht toe doen.
         </p>
+
+        <div style="margin-top:10px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);padding:12px 14px;border-radius:10px;color:#cfcfcf;font-size:13px;line-height:1.6;">
+          ✨ ${hook}
+        </div>
       </div>
 
       <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="border-collapse:separate;border-spacing:10px;margin:10px -10px 0;">
         <tr>
-          <td width="50%" style="background:#1a1818;border-radius:10px;padding:18px;vertical-align:top;">
-            <div style="font-size:13px;color:#fff;margin-bottom:10px;">👤 Nieuwe gebruikers</div>
-            <div style="font-size:22px;font-weight:700;">${newUsers}</div>
-            <div style="font-size:12px;color:#7CFFB2;margin-top:6px;">${escapeHtml(
-              growthUsersLabel
-            )} vs vorige maand</div>
+          <td width="50%" style="${cardStyle}">
+            <div style="${labelStyle}">Nieuwe gebruikers</div>
+            <div style="${valueStyle}">${fmtInt(newUsers)}</div>
+            <div style="${subStyle}color:${deltaColor(newUsersDelta)};">
+              ${escapeHtml(fmtPct(newUsersDelta))} vs vorige maand
+            </div>
           </td>
-          <td width="50%" style="background:#1a1818;border-radius:10px;padding:18px;vertical-align:top;">
-            <div style="font-size:13px;color:#fff;margin-bottom:10px;">📄 Sessies</div>
-            <div style="font-size:22px;font-weight:700;">${sessions}</div>
-            <div style="font-size:12px;color:#7CFFB2;margin-top:6px;">${escapeHtml(
-              growthSessionsLabel
-            )} vs vorige maand</div>
+
+          <td width="50%" style="${cardStyle}">
+            <div style="${labelStyle}">Conversies</div>
+            <div style="${valueStyle}">${fmtInt(conversions)}</div>
+            <div style="${subStyle}color:${deltaColor(conversionsDelta)};">
+              ${escapeHtml(fmtPct(conversionsDelta))} vs vorige maand
+            </div>
           </td>
         </tr>
+
         <tr>
-          <td width="50%" style="background:#1a1818;border-radius:10px;padding:18px;vertical-align:top;">
-            <div style="font-size:13px;color:#fff;margin-bottom:10px;">📑 Populairste pagina</div>
-            <div style="font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(
-              topPage
-            )}</div>
-            <div style="font-size:12px;color:#cfcfcf;margin-top:6px;">${topPageViews} weergaven</div>
+          <td width="50%" style="${cardStyle}">
+            <div style="${labelStyle}">Organisch verkeer</div>
+            <div style="${valueStyle}">${fmtInt(organicClicks)}</div>
+            <div style="font-size:12px;color:#cfcfcf;margin-top:6px;">
+              Google clicks (Search Console)
+            </div>
+            <div style="${subStyle}color:${deltaColor(organicClicksDelta)};">
+              ${escapeHtml(fmtPct(organicClicksDelta))} vs vorige maand
+            </div>
           </td>
-          <td width="50%" style="background:#1a1818;border-radius:10px;padding:18px;vertical-align:top;">
-            <div style="font-size:13px;color:#fff;margin-bottom:10px;">🌍 Top land</div>
-            <div style="font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(
-              topCountry
-            )}</div>
-            <div style="font-size:12px;color:#cfcfcf;margin-top:6px;">${topCountryUsers} gebruikers</div>
+
+          <td width="50%" style="${cardStyle}">
+            <div style="${labelStyle}">Gemiste kans</div>
+            <div style="${valueStyle}">${fmtInt(missedOpportunity)}</div>
+            <div style="font-size:12px;color:#cfcfcf;margin-top:6px;">
+              Vertoningen zónder klik (impressies − clicks)
+            </div>
+            <div style="${subStyle}color:${deltaColor(missedDelta)};">
+              ${escapeHtml(fmtPct(missedDelta))} vs vorige maand
+            </div>
           </td>
         </tr>
       </table>
 
       <div style="background:#1a1818;border-radius:10px;padding:22px;margin-top:16px;text-align:center;">
         <p style="margin:0 0 12px;color:#cfcfcf;font-size:13px;line-height:1.6;">
-          Bekijk uw volledig dashboard met gedetailleerde statistieken, grafieken en groeikansen via onderstaande knop.
+          In uw dashboard ziet u precies <b style="color:#fff;">waar</b> de groei zit (pagina’s, zoekwoorden, trends) en welke acties het meeste opleveren.
         </p>
         <a href="${escapeHtml(reportUrl)}"
            style="display:inline-block;background:#fff;color:#000;text-decoration:none;font-weight:700;
